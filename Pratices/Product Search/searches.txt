@@ -1,0 +1,3 @@
+Name: Laptop, Price: 50000, Discount: 10%, Final: 45000
+Name: Laptop, Price: 50000, Discount: 20%, Final: 40000
+Name: Laptop, Price: 500000, Discount: 20%, Final: 400000

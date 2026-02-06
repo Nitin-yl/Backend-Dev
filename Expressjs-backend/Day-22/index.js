@@ -1,119 +1,117 @@
 const express = require("express");
-const fs = require("fs-extra");
-const path = require("path");
+const fs = require("fs");
 
 const app = express();
+
 const PORT = 8000;
+
 app.use(express.json());
+const students = [
+  { id: 1, name: "raj", branch: "CSE" },
+  { id: 2, name: "Ajay", branch: "ECE" },
+  { id: 3, name: "Yash", branch: "IT" },
+];
 
-const DB = path.join(__dirname, "students.json");
-   
-const readDB = async () => await fs.readJson(DB).catch(() => []);
-const writeDB = (data) => fs.writeJson(DB, data, { spaces: 2 });
+app.get("/", (req, res) => {
+  res.send("Welcome to home page");
+});
 
-const validStr = (v) => typeof v === "string" && v.trim();
-const validId = (id) => Number.isInteger(id) && id > 0;
+app.get("/students", (req, res) => {
+  fs.readFile("./students.json", (err, data) => {
+    if (err) {
+      return res.status(500).send("Error occured");
+    }
+    return res.status(200).send(JSON.parse(data));
+  });
+});
 
-const asyncHandler = (fn) => (req, res) =>
-  Promise.resolve(fn(req, res)).catch(() =>
-    res.status(500).json({ message: "Server error" }),
-  );
+app.get("/students/search", (req, res) => {
+  const branch = req.query.branch;
 
-app.get("/", (_, res) => res.send("Student API Running 🚀"));
+  if (!branch) {
+    return res.status(400).send("please provide query parameter");
+  }
+  const foundStudents = students.filter((s) => s.branch == branch);
+  return res.json(foundStudents);
+});
 
-app.get(
-  "/students",
-  asyncHandler(async (req, res) => {
-    const students = await readDB();
-    const { branch } = req.query;
+app.get("/students/:id", (req, res) => {
+  const id = req.params.id;
 
-    res.json(
-      branch
-        ? students.filter(
-            (s) => s.branch.toLowerCase() === branch.toLowerCase(),
-          )
-        : students,
-    );
-  }),
-);
+  const arrayIndex = students.findIndex((s) => s.id == id);
+  if (arrayIndex == -1) {
+    return res.status(404).send("Student not found");
+  }
 
-// GET by ID
-app.get(
-  "/students/:id",
-  asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
-    if (!validId(id)) return res.status(400).json({ message: "Invalid ID" });
+  const foundStudent = students[arrayIndex];
+  res.json(foundStudent);
+});
 
-    const student = (await readDB()).find((s) => s.id === id);
-    if (!student) return res.status(404).json({ message: "Student not found" });
+app.post("/students/register", (req, res) => {
+  const { name, branch } = req.body;
+  if (!name || !branch) return res.status(400).send("Details missing");
 
-    res.json(student);
-  }),
-);
+  //  Read the file first
+  fs.readFile("./students.json", "utf-8", (err, data) => {
+    if (err) return res.status(500).send("Could not read file");
 
-// POST
-app.post(
-  "/students",
-  asyncHandler(async (req, res) => {
-    const { id, name, branch } = req.body;
-    if (!validId(id) || !validStr(name) || !validStr(branch))
-      return res.status(400).json({ message: "Invalid input data" });
+    // . Parse existing data or start with empty array
+    const students = JSON.parse(data || "[]");
 
-    const students = await readDB();
-    if (students.some((s) => s.id === id))
-      return res.status(409).json({ message: "ID already exists" });
-
-    const student = {
-      id,
-      name: name.trim(),
-      branch: branch.trim().toUpperCase(),
+    //  Create and push new student
+    const newStudent = {
+      id: students.length > 0 ? students[students.length - 1].id + 1 : 1,
+      name,
+      branch,
     };
-    await writeDB([...students, student]);
+    students.push(newStudent);
 
-    res.status(201).json({ message: "Student created", student });
-  }),
-);
+    //  Write the WHOLE array back to the file (Overwriting)
+    fs.writeFile(
+      "./students.json",
+      JSON.stringify(students, null, 2),
+      (err) => {
+        if (err) return res.status(500).send("Error writing to file");
 
-// PUT
-app.put(
-  "/students/:id",
-  asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
-    const { name, branch } = req.body;
-    if (!validId(id) || (!name && !branch))
-      return res.status(400).json({ message: "Invalid input" });
+        //  ONLY send response inside the success callback
+        return res
+          .status(201)
+          .json({ message: "Registered!", student: newStudent });
+      },
+    );
+  });
+});
 
-    const students = await readDB();
-    const student = students.find((s) => s.id === id);
-    if (!student) return res.status(404).json({ message: "Student not found" });
+app.put("/students/:id", (req, res) => {
+  const userId = parseInt(req.params.id);
 
-    if (validStr(name)) student.name = name.trim();
-    if (validStr(branch)) student.branch = branch.trim().toUpperCase();
+  const foundIndex = students.findIndex((s) => s.id === userId);
 
-    await writeDB(students);
-    res.json({ message: "Student updated", student });
-  }),
-);
+  if (foundIndex == -1) {
+    return res.status(404).send("Student  not found");
+  }
 
-// DELETE
-app.delete(
-  "/students/:id",
-  asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
-    if (!validId(id)) return res.status(400).json({ message: "Invalid ID" });
+  students[foundIndex] = { ...students[foundIndex], ...req.body };
 
-    const students = await readDB();
-    const filtered = students.filter((s) => s.id !== id);
-    if (students.length === filtered.length)
-      return res.status(404).json({ message: "Student not found" });
+  const result = { message: "updated sucessfully", students: students };
+  return res.status(200).json(result);
+});
 
-    await writeDB(filtered);
-    res.json({ message: "Student deleted" });
-  }),
-);
+app.delete("/students/:id", (req, res) => {
+  const id = parseInt(req.params.id);
 
-app.use((_, res) => res.status(404).json({ message: "Route not found" }));
+  const foundIndex = students.findIndex((s) => s.id == id);
+  if (foundIndex == -1) {
+    return res.status(400).send("Student not found");
+  }
+  students.splice(foundIndex, 1);
 
-app.listen(PORT, () =>
-  console.log(`Server running → http://localhost:${PORT}`),
-);
+  return res.status(200).json({
+    message: "Student deleted sucessfully",
+    updatedStudents: students,
+  });
+});
+
+app.listen(PORT, () => {
+  console.log("Server is listening on port:8000");
+});
